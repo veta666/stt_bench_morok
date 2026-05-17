@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 morok-model = { git = "https://github.com/npatsakula/morok.git "}
+transcription-normalization = { git = "https://github.com/mexus/transcription-normalization.git" }
 hound = "3.5"
 tracing-subscriber = "0.3.23"
 tracing = "0.1.44"

@@ -4,10 +4,13 @@
 //! panel uses Unicode box-drawing chars; if you're piping into a tool that
 //! mangles UTF-8 you'll want to strip them with `sed` on the way out.
 
+use std::ops::Range;
 use std::path::Path;
 
 use crate::bench::FileScore;
-use crate::wer::{AlignOp, TimingStats, WerResult, WerWord};
+use crate::wer::{
+    AlignmentResult, Op, TimeSpan, TimingStats, Word, token_word_range, tokens_word_range,
+};
 
 // ANSI styling. Terminals supporting xterm-256 / truecolor render these fine.
 pub const RESET: &str = "\x1b[0m";
@@ -18,52 +21,87 @@ pub const GREEN: &str = "\x1b[32m";
 pub const YELLOW: &str = "\x1b[33m";
 pub const CYAN: &str = "\x1b[36m";
 
-/// Which side of the alignment is being rendered: reference (ground truth)
-/// or hypothesis (model output).
+/// Which side of the alignment is being rendered.
 #[derive(Copy, Clone)]
 pub enum Side {
     Ref,
     Hyp,
 }
 
-/// Render one side of the alignment as a single colored line, suitable for
-/// the `REF:` / `HYP:` rows of the single-file panel.
+fn join_text(words: &[Word], range: Range<usize>) -> String {
+    words[range]
+        .iter()
+        .map(|w| w.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Render one side of the alignment as a single colored line.
 pub fn fmt_words_colored(
     side: Side,
-    alignment: &[AlignOp],
-    reference: &[WerWord],
-    hypothesis: &[WerWord],
+    result: &AlignmentResult,
+    reference: &[Word],
+    hypothesis: &[Word],
 ) -> String {
     let mut out = String::new();
-    for op in alignment {
-        match (*op, side) {
-            (AlignOp::Match { ref_idx, .. }, Side::Ref) => {
-                out.push_str(&reference[ref_idx].text);
+    for op in &result.ops {
+        let (text, color) = match (op, side) {
+            (
+                Op::Match {
+                    ref_range,
+                    hyp_range,
+                },
+                Side::Ref,
+            ) => {
+                let r = tokens_word_range(&result.ref_tokens[ref_range.clone()]);
+                let _ = hyp_range;
+                (join_text(reference, r), "")
+            }
+            (
+                Op::Match {
+                    ref_range,
+                    hyp_range,
+                },
+                Side::Hyp,
+            ) => {
+                let h = tokens_word_range(&result.hyp_tokens[hyp_range.clone()]);
+                let _ = ref_range;
+                (join_text(hypothesis, h), "")
+            }
+            (Op::Sub { ref_idx, .. }, Side::Ref) => {
+                let r = token_word_range(&result.ref_tokens[*ref_idx]);
+                (join_text(reference, r), RED)
+            }
+            (Op::Sub { hyp_idx, .. }, Side::Hyp) => {
+                let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+                (join_text(hypothesis, h), YELLOW)
+            }
+            (Op::Del { ref_idx }, Side::Ref) => {
+                let r = token_word_range(&result.ref_tokens[*ref_idx]);
+                let txt = format!("{BOLD}{RED}{}{RESET}", join_text(reference, r));
+                out.push_str(&txt);
                 out.push(' ');
+                continue;
             }
-            (AlignOp::Match { hyp_idx, .. }, Side::Hyp) => {
-                out.push_str(&hypothesis[hyp_idx].text);
-                out.push(' ');
-            }
-            (AlignOp::Sub { ref_idx, .. }, Side::Ref) => {
-                out.push_str(&format!("{RED}{}{RESET} ", reference[ref_idx].text));
-            }
-            (AlignOp::Sub { hyp_idx, .. }, Side::Hyp) => {
-                out.push_str(&format!("{YELLOW}{}{RESET} ", hypothesis[hyp_idx].text));
-            }
-            (AlignOp::Del { ref_idx }, Side::Ref) => {
-                out.push_str(&format!("{BOLD}{RED}{}{RESET} ", reference[ref_idx].text));
-            }
-            (AlignOp::Del { .. }, Side::Hyp) => {
+            (Op::Del { .. }, Side::Hyp) => {
                 out.push_str(&format!("{DIM}—{RESET} "));
+                continue;
             }
-            (AlignOp::Ins { .. }, Side::Ref) => {
+            (Op::Ins { .. }, Side::Ref) => {
                 out.push_str(&format!("{DIM}—{RESET} "));
+                continue;
             }
-            (AlignOp::Ins { hyp_idx }, Side::Hyp) => {
-                out.push_str(&format!("{GREEN}{}{RESET} ", hypothesis[hyp_idx].text));
+            (Op::Ins { hyp_idx }, Side::Hyp) => {
+                let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+                (join_text(hypothesis, h), GREEN)
             }
+        };
+        if color.is_empty() {
+            out.push_str(&text);
+        } else {
+            out.push_str(&format!("{color}{text}{RESET}"));
         }
+        out.push(' ');
     }
     out
 }
@@ -84,12 +122,12 @@ pub fn print_single(
     idx: Option<i32>,
     duration_s: f32,
     transcribe_s: f32,
-    reference: &[WerWord],
-    hypothesis: &[WerWord],
+    reference: &[Word],
+    hypothesis: &[Word],
     have_truth: bool,
-    w: &WerResult,
+    result: &AlignmentResult,
     t: &TimingStats,
-    drift_threshold_s: f32,
+    drift_threshold_s: f64,
 ) {
     let title = match idx {
         Some(i) => format!("{} (idx={i})", path.display()),
@@ -113,11 +151,11 @@ pub fn print_single(
     if have_truth {
         println!(
             "{CYAN}│{RESET} WER:       {wer:6.2} %   {CYAN}│{RESET} S={s} D={d} I={i}  N={n}",
-            wer = w.wer() * 100.0,
-            s = w.substitutions,
-            d = w.deletions,
-            i = w.insertions,
-            n = w.ref_len,
+            wer = result.wer() * 100.0,
+            s = result.substitutions(),
+            d = result.deletions(),
+            i = result.insertions(),
+            n = result.ref_token_count(),
         );
         if t.matched_pairs > 0 {
             println!(
@@ -139,19 +177,19 @@ pub fn print_single(
     if have_truth {
         println!(
             "{CYAN}│{RESET} {BOLD}REF{RESET}: {}",
-            fmt_words_colored(Side::Ref, &w.alignment, reference, hypothesis)
+            fmt_words_colored(Side::Ref, result, reference, hypothesis)
         );
         println!(
             "{CYAN}│{RESET} {BOLD}HYP{RESET}: {}",
-            fmt_words_colored(Side::Hyp, &w.alignment, reference, hypothesis)
+            fmt_words_colored(Side::Hyp, result, reference, hypothesis)
         );
         println!("{CYAN}├{hline}{RESET}");
         println!(
             "{CYAN}│{RESET} {BOLD}Alignment{RESET}  ({GREEN}match{RESET}, {RED}sub{RESET}, {BOLD}{RED}del{RESET}, {GREEN}ins{RESET}; ⚠ = drift>{:.1}s):",
             drift_threshold_s
         );
-        for op in &w.alignment {
-            print_alignment_row(*op, reference, hypothesis, drift_threshold_s);
+        for op in &result.ops {
+            print_alignment_row(op, result, reference, hypothesis, drift_threshold_s);
         }
     } else {
         let joined: String = hypothesis
@@ -165,77 +203,91 @@ pub fn print_single(
 }
 
 fn print_alignment_row(
-    op: AlignOp,
-    reference: &[WerWord],
-    hypothesis: &[WerWord],
-    drift_threshold_s: f32,
+    op: &Op,
+    result: &AlignmentResult,
+    reference: &[Word],
+    hypothesis: &[Word],
+    drift_threshold_s: f64,
 ) {
+    let timing = result.op_timing(op);
     match op {
-        AlignOp::Match { ref_idx, hyp_idx } => {
-            let r = &reference[ref_idx];
-            let h = &hypothesis[hyp_idx];
-            let dmid = (h.midpoint() - r.midpoint()).abs();
+        Op::Match { ref_range, .. } => {
+            let r = tokens_word_range(&result.ref_tokens[ref_range.clone()]);
+            let r_span = timing.ref_span.expect("Match has ref_span");
+            let h_span = timing.hyp_span.expect("Match has hyp_span");
+            let dmid = (0.5 * (h_span.start + h_span.end)
+                - 0.5 * (r_span.start + r_span.end))
+                .abs();
             let flag = if dmid > drift_threshold_s {
                 format!("{YELLOW}⚠{RESET} ")
             } else {
                 "  ".to_string()
             };
             println!(
-                "{CYAN}│{RESET}   {flag}{GREEN}OK {RESET}  {tx:<24}  ref[{rs:>5.2}-{re:>5.2}]  hyp[{hs:>5.2}-{he:>5.2}]  Δmid={dmid:.2}s",
-                tx = r.text,
-                rs = r.start,
-                re = r.end,
-                hs = h.start,
-                he = h.end,
+                "{CYAN}│{RESET}   {flag}{GREEN}OK {RESET}  {tx:<24}  {r_lo}  {h_lo}  Δmid={dmid:.2}s",
+                tx = join_text(reference, r),
+                r_lo = fmt_span("ref", &r_span),
+                h_lo = fmt_span("hyp", &h_span),
             );
         }
-        AlignOp::Sub { ref_idx, hyp_idx } => {
-            let r = &reference[ref_idx];
-            let h = &hypothesis[hyp_idx];
+        Op::Sub { ref_idx, hyp_idx } => {
+            let r = token_word_range(&result.ref_tokens[*ref_idx]);
+            let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+            let r_span = timing.ref_span.expect("Sub has ref_span");
+            let h_span = timing.hyp_span.expect("Sub has hyp_span");
             println!(
-                "{CYAN}│{RESET}     {RED}SUB{RESET} {rtxt:<24}  →  {htxt:<24}  ref[{rs:>5.2}-{re:>5.2}]  hyp[{hs:>5.2}-{he:>5.2}]",
-                rtxt = r.text,
-                htxt = h.text,
-                rs = r.start,
-                re = r.end,
-                hs = h.start,
-                he = h.end,
+                "{CYAN}│{RESET}     {RED}SUB{RESET} {rtxt:<24}  →  {htxt:<24}  {r_lo}  {h_lo}",
+                rtxt = join_text(reference, r),
+                htxt = join_text(hypothesis, h),
+                r_lo = fmt_span("ref", &r_span),
+                h_lo = fmt_span("hyp", &h_span),
             );
         }
-        AlignOp::Del { ref_idx } => {
-            let r = &reference[ref_idx];
+        Op::Del { ref_idx } => {
+            let r = token_word_range(&result.ref_tokens[*ref_idx]);
+            let r_span = timing.ref_span.expect("Del has ref_span");
             println!(
-                "{CYAN}│{RESET}     {BOLD}{RED}DEL{RESET} {rtxt:<24}  →  {DIM}<missing>{RESET}                  ref[{rs:>5.2}-{re:>5.2}]",
-                rtxt = r.text,
-                rs = r.start,
-                re = r.end,
+                "{CYAN}│{RESET}     {BOLD}{RED}DEL{RESET} {rtxt:<24}  →  {DIM}<missing>{RESET}                  {r_lo}",
+                rtxt = join_text(reference, r),
+                r_lo = fmt_span("ref", &r_span),
             );
         }
-        AlignOp::Ins { hyp_idx } => {
-            let h = &hypothesis[hyp_idx];
+        Op::Ins { hyp_idx } => {
+            let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+            let h_span = timing.hyp_span.expect("Ins has hyp_span");
             println!(
-                "{CYAN}│{RESET}     {GREEN}INS{RESET} {DIM}<missing>{RESET}                  →  {htxt:<24}  hyp[{hs:>5.2}-{he:>5.2}]",
-                htxt = h.text,
-                hs = h.start,
-                he = h.end,
+                "{CYAN}│{RESET}     {GREEN}INS{RESET} {DIM}<missing>{RESET}                  →  {htxt:<24}  {h_lo}",
+                htxt = join_text(hypothesis, h),
+                h_lo = fmt_span("hyp", &h_span),
             );
         }
     }
+}
+
+fn fmt_span(label: &str, s: &TimeSpan) -> String {
+    format!("{label}[{:>5.2}-{:>5.2}]", s.start, s.end)
 }
 
 /// Corpus-level summary: overall WER (sum-based), per-file WER quantiles,
 /// aggregate timing drift, and a worst-N table.
 pub fn print_summary(
     per_file: &[FileScore],
-    totals: &WerResult,
     total_timing: &TimingStats,
     total_dur_s: f32,
     total_xt_s: f32,
     worst_n: usize,
-    drift_threshold_s: f32,
+    drift_threshold_s: f64,
 ) {
     let n = per_file.len();
-    let overall_wer = totals.wer() * 100.0;
+    let subs: usize = per_file.iter().map(|f| f.subs).sum();
+    let dels: usize = per_file.iter().map(|f| f.dels).sum();
+    let ins: usize = per_file.iter().map(|f| f.ins).sum();
+    let ref_total: usize = per_file.iter().map(|f| f.ref_len).sum();
+    let overall_wer = if ref_total == 0 {
+        0.0
+    } else {
+        (subs + dels + ins) as f64 / ref_total as f64
+    } * 100.0;
     let rtf = if total_dur_s > 0.0 {
         total_xt_s / total_dur_s
     } else {
@@ -260,11 +312,7 @@ pub fn print_summary(
     );
     println!("   Mean RTF:             {rtf:.3}x");
     println!(
-        "   {BOLD}Overall WER:          {overall_wer:.2}%{RESET}   (S={s} D={d} I={i}  N={n_ref})",
-        s = totals.substitutions,
-        d = totals.deletions,
-        i = totals.insertions,
-        n_ref = totals.ref_len,
+        "   {BOLD}Overall WER:          {overall_wer:.2}%{RESET}   (S={subs} D={dels} I={ins}  N={ref_total})",
     );
     println!(
         "   Per-file WER:         min {:.2}%  p25 {:.2}%  median {:.2}%  p75 {:.2}%  p95 {:.2}%  max {:.2}%",
@@ -277,8 +325,9 @@ pub fn print_summary(
     );
 
     if total_timing.matched_pairs > 0 {
-        let drift_share =
-            total_timing.high_drift_pairs as f32 / total_timing.matched_pairs.max(1) as f32 * 100.0;
+        let drift_share = total_timing.high_drift_pairs as f64
+            / total_timing.matched_pairs.max(1) as f64
+            * 100.0;
         println!(
             "   Timing (matched={mp}):  drift mean/median/p95 = {mean:.2}/{med:.2}/{p95:.2}s   high-drift(>{dt:.1}s)={hd} ({share:.1}%)",
             mp = total_timing.matched_pairs,
@@ -308,7 +357,7 @@ pub fn print_summary(
         );
         for f in sorted.iter().take(k) {
             let drift_pct = if f.matched_pairs > 0 {
-                f.high_drift_pairs as f32 / f.matched_pairs as f32 * 100.0
+                f.high_drift_pairs as f64 / f.matched_pairs as f64 * 100.0
             } else {
                 0.0
             };

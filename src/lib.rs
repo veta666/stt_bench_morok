@@ -23,9 +23,7 @@ pub mod dataset;
 pub mod pretty;
 pub mod wer;
 
-pub use wer::{
-    AlignOp, TimingStats, WerResult, WerWord, compute_wer, normalize_word, timing_stats,
-};
+pub use wer::{AlignmentResult, Op, TimingStats, Token, Word, compute_wer, timing_stats};
 
 /// Decode a WAV stream from any `Read + Seek` source into `(samples, sample_rate)`.
 /// Integer samples are normalized to `[-1.0, 1.0]` by dividing by `32768.0`.

@@ -15,7 +15,8 @@ use arrow::array::{
 };
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
-use crate::WerWord;
+use crate::Word;
+use crate::wer::fold_short_i;
 
 /// One row of the dataset, decoded into owned form so the caller is free of
 /// arrow lifetimes.
@@ -26,7 +27,7 @@ pub struct DatasetRow {
     /// WAV bytes (RIFF/PCM 16 kHz mono).
     pub audio_bytes: Vec<u8>,
     /// Ground-truth words on the combined timeline (start/end in seconds).
-    pub words: Vec<WerWord>,
+    pub words: Vec<Word>,
 }
 
 /// Borrow a typed child array from a parent exposing `column_by_name` (works
@@ -52,10 +53,20 @@ pub struct DatasetIter {
     row_in_batch: usize,
 }
 
+/// Rows per arrow batch. `audio.bytes` is decoded into a `BinaryArray`,
+/// whose offsets are `i32` — so a single batch can hold at most ~2 GiB of
+/// byte-array content before the cumulative offset overflows. With audio
+/// rows averaging a few MB, the parquet default of 1024 rows/batch trips
+/// "index overflow decoding byte array" on row group 0. 16 keeps the
+/// worst-case batch comfortably under the limit.
+const BATCH_ROWS: usize = 16;
+
 impl DatasetIter {
     pub fn open(path: &Path) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?
+            .with_batch_size(BATCH_ROWS)
+            .build()?;
         Ok(Self {
             reader,
             current: None,
@@ -107,8 +118,14 @@ fn decode_row(batch: &RecordBatch, row: usize) -> Result<DatasetRow, Box<dyn Err
     let start_arr = col!(struct_arr, "start", Float32Array);
     let end_arr = col!(struct_arr, "end", Float32Array);
 
-    let words: Vec<WerWord> = (0..struct_arr.len())
-        .map(|k| WerWord::new(text_arr.value(k), start_arr.value(k), end_arr.value(k)))
+    let words: Vec<Word> = (0..struct_arr.len())
+        .map(|k| {
+            Word::new(
+                fold_short_i(text_arr.value(k)),
+                start_arr.value(k) as f64,
+                end_arr.value(k) as f64,
+            )
+        })
         .collect();
 
     Ok(DatasetRow {
