@@ -1,48 +1,50 @@
 //! `stt_bench` binary: thin entry point. All heavy lifting lives in the
-//! sibling lib modules (`cli`, `truth`, `bench`, `pretty`, `wer`).
+//! sibling lib modules (`cli`, `dataset`, `bench`, `pretty`, `wer`).
 
 use std::error::Error;
 
 use clap::Parser;
-use morok_model::gigaam::TranscribeOpts;
-use tracing::info;
+use morok_model::audio::Splitter;
+use morok_model::gigaam::{TranscribeOpts, Transcriber};
 
-use stt_bench::bench::{run_dir, run_single};
-use stt_bench::build_rnnt_transcriber;
-use stt_bench::cli::{Args, parse_idx_from_filename};
-use stt_bench::truth::load_truth;
+use stt_bench::bench::{run_custom_wav, run_dataset, run_idx};
+use stt_bench::cli::{Args, SplitterChoice};
+use stt_bench::{build_rnnt_transcriber, build_rnnt_transcriber_fixed};
 
 fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    if args.audio.is_none() && args.dir.is_none() {
-        return Err("specify --audio FILE or --dir DIR".into());
-    }
-
-    let truth = load_truth(&args.truth)?;
-    info!(
-        "loaded {} ground-truth rows from {}",
-        truth.len(),
-        args.truth.display(),
-    );
-
     let mut opts = TranscribeOpts::from_env();
     opts.word_timestamps = true; // bench always needs word-level timing
-    let mut transcriber = build_rnnt_transcriber(&args.repo, &args.revision, opts)?;
 
+    match args.splitter {
+        SplitterChoice::Silero => {
+            let mut t = build_rnnt_transcriber(&args.repo, &args.revision, opts)?;
+            dispatch(&args, &mut t)
+        }
+        SplitterChoice::Fixed => {
+            let mut t = build_rnnt_transcriber_fixed(&args.repo, &args.revision, opts)?;
+            dispatch(&args, &mut t)
+        }
+    }
+}
+
+fn dispatch<S: Splitter>(
+    args: &Args,
+    transcriber: &mut Transcriber<S>,
+) -> Result<(), Box<dyn Error>> {
     if let Some(audio) = &args.audio {
-        let idx = args.idx.or_else(|| parse_idx_from_filename(audio));
-        run_single(&mut transcriber, audio, idx, &truth, args.drift_threshold)?;
-    } else if let Some(dir) = &args.dir {
-        run_dir(
-            &mut transcriber,
-            dir,
-            &truth,
+        run_custom_wav(transcriber, audio, args.drift_threshold)
+    } else if let Some(idx) = args.idx {
+        run_idx(transcriber, &args.dataset, idx, args.drift_threshold)
+    } else {
+        run_dataset(
+            transcriber,
+            &args.dataset,
             args.limit,
             args.worst,
             args.drift_threshold,
-        )?;
+        )
     }
-    Ok(())
 }

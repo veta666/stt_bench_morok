@@ -1,59 +1,59 @@
-//! CLI surface: the `Args` struct (clap-derived) and small filename helpers.
+//! CLI surface: the `Args` struct (clap-derived).
 
-use clap::Parser;
-use std::path::{Path, PathBuf};
+use clap::{Parser, ValueEnum};
+use std::path::PathBuf;
+
+/// Which audio chunker feeds the encoder.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum SplitterChoice {
+    /// Silero VAD: model-driven, splits on detected speech regions.
+    Silero,
+    /// Encoder-stride-aligned fixed windows; no model load. Lower quality
+    /// on long-form audio (word splits at chunk seams) but faster startup.
+    Fixed,
+}
 
 #[derive(Parser, Debug)]
 #[command(about = "STT benchmark over GigaAM RN-T", version)]
 pub struct Args {
-    /// Single WAV to transcribe; produces the pretty per-file panel.
-    #[arg(long, conflicts_with = "dir")]
-    pub audio: Option<PathBuf>,
+    /// Path to the dataset parquet (audio + ground-truth words). Default is
+    /// the local copy of
+    /// `veta666/golos_mfa_punctuation_long/data/golos_mfa_punctuation_long_00000.parquet`.
+    #[arg(long, default_value = "data/golos_long.parquet")]
+    pub dataset: PathBuf,
 
-    /// Directory of `combinedNNNN.wav` files; produces aggregate stats.
+    /// Single-row mode: transcribe just this dataset `idx` and emit the
+    /// pretty per-file panel. Mutually exclusive with `--audio`.
     #[arg(long, conflicts_with = "audio")]
-    pub dir: Option<PathBuf>,
-
-    /// Combined parquet with ground truth (`idx` + `words` columns).
-    #[arg(long, default_value = "data/combined.parquet")]
-    pub truth: PathBuf,
-
-    /// Override the idx parsed from the filename (single-file mode only).
-    #[arg(long)]
     pub idx: Option<i32>,
 
-    /// Default Hugging Face Hub repo for the GigaAM RN-T weights.
+    /// Custom WAV path outside the dataset (no ground truth → no WER).
+    /// Mutually exclusive with `--idx`.
+    #[arg(long, conflicts_with = "idx")]
+    pub audio: Option<PathBuf>,
+
+    /// HF Hub repo for GigaAM weights.
     #[arg(long, default_value = "vpermilp/GigaAM-v3")]
     pub repo: String,
 
-    /// Default revision (RN-T head) inside the repo above.
+    /// HF Hub revision (RN-T head).
     #[arg(long, default_value = "e2e_rnnt")]
     pub revision: String,
 
-    /// In dir mode, cap the number of files processed (0 = all).
+    /// Corpus mode: cap the number of dataset rows processed (0 = all).
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
-    /// In dir mode, print the N files with the worst WER.
+    /// Corpus mode: print the N rows with the worst WER.
     #[arg(long, default_value_t = 5)]
     pub worst: usize,
 
     /// Midpoint-drift threshold (seconds) for flagging a matched pair as "off".
     #[arg(long, default_value_t = 1.0)]
     pub drift_threshold: f32,
-}
 
-/// Parse a trailing run of digits in the filename stem as an i32.
-/// `combined0042.wav` -> `Some(42)`; non-numeric stems return `None`.
-pub fn parse_idx_from_filename(p: &Path) -> Option<i32> {
-    let stem = p.file_stem()?.to_str()?;
-    let digits_rev: String = stem
-        .chars()
-        .rev()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    if digits_rev.is_empty() {
-        return None;
-    }
-    digits_rev.chars().rev().collect::<String>().parse().ok()
+    /// Audio chunker fed into the encoder. `silero` is the default
+    /// production path; `fixed` swaps in `FixedLengthSplitter` (no VAD model).
+    #[arg(long, value_enum, default_value_t = SplitterChoice::Silero)]
+    pub splitter: SplitterChoice,
 }

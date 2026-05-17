@@ -1,23 +1,32 @@
-//! Bench drivers: load a WAV, transcribe, score against ground truth, render.
+//! Bench drivers: pull audio from the HF dataset parquet (or a custom WAV),
+//! transcribe, score against the dataset's ground-truth `words` column,
+//! render.
 //!
-//! Two entry points: [`run_single`] for the pretty per-file panel and
-//! [`run_dir`] for the corpus-level summary. The model is loaded once by the
-//! caller (`main`) and threaded in by mutable reference, so a directory run
-//! pays the HF download / weight-load cost exactly once.
+//! Three entry points share one internal scoring helper:
+//!
+//! * [`run_dataset`] — stream the whole parquet, accumulate corpus-level
+//!   stats, emit the summary panel.
+//! * [`run_idx`] — single-row mode: pull just one `idx` from the parquet
+//!   and emit the pretty per-file panel.
+//! * [`run_custom_wav`] — escape hatch for an arbitrary WAV file outside
+//!   the dataset (no ground truth, so no WER).
+//!
+//! The model is loaded once by the caller and threaded in by mutable
+//! reference, so a corpus run pays the HF download / weight-load cost
+//! exactly once.
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use morok_model::audio::Splitter;
 use morok_model::gigaam::{TranscribeResult, Transcriber};
-use morok_model::silero_vad::SileroVadSplitter;
 use tracing::info;
 
-use crate::load_wav;
+use crate::dataset::{DatasetIter, DatasetRow, find_row};
 use crate::pretty::{print_single, print_summary};
-use crate::truth::TruthRow;
 use crate::wer::{TimingStats, WerResult, WerWord, compute_wer, timing_stats};
+use crate::{load_wav, load_wav_from_bytes};
 
 /// Convert the model's word stream into our normalized `WerWord` form,
 /// dropping any tokens that normalize to empty strings.
@@ -29,8 +38,8 @@ pub fn hyp_words(result: &TranscribeResult) -> Vec<WerWord> {
         .collect()
 }
 
-/// One row of per-file results, accumulated by `run_dir` and consumed by
-/// the summary printer.
+/// One row of per-file results, accumulated by `run_dataset` and consumed
+/// by the summary printer.
 #[derive(Debug, Clone)]
 pub struct FileScore {
     pub idx: Option<i32>,
@@ -47,62 +56,48 @@ pub struct FileScore {
     pub mean_abs_mid_s: f32,
 }
 
-/// Transcribe one WAV and emit the colored per-file panel.
-pub fn run_single(
-    transcriber: &mut Transcriber<SileroVadSplitter>,
-    path: &Path,
-    idx: Option<i32>,
-    truth: &HashMap<i32, TruthRow>,
-    drift_threshold_s: f32,
-) -> Result<(), Box<dyn Error>> {
-    let (waveform, sr) = load_wav(path)?;
-    let duration_s = waveform.len() as f32 / sr as f32;
-
-    info!(
-        "transcribing {} ({:.1}s @ {} Hz)",
-        path.display(),
-        duration_s,
-        sr
-    );
-    let t = Instant::now();
-    let result = transcriber.transcribe(&waveform, sr)?;
-    let dt = t.elapsed();
-
-    let hyp = hyp_words(&result);
-    let truth_row = idx.and_then(|i| truth.get(&i));
-    let ref_words: Vec<WerWord> = truth_row.map(|r| r.words.clone()).unwrap_or_default();
-
-    let wer = compute_wer(&ref_words, &hyp);
-    let timing = timing_stats(&ref_words, &hyp, &wer.alignment, drift_threshold_s);
-
-    print_single(
-        path,
-        idx,
-        duration_s,
-        dt.as_secs_f32(),
-        &ref_words,
-        &hyp,
-        truth_row.is_some(),
-        &wer,
-        &timing,
-        drift_threshold_s,
-    );
-    Ok(())
+/// Output of [`score_waveform`]: timing + hypothesis + WER + drift stats.
+struct Scored {
+    transcribe_dt: Duration,
+    hyp: Vec<WerWord>,
+    wer: WerResult,
+    timing: TimingStats,
 }
 
-/// Transcribe every `.wav` in `dir`, accumulate corpus-level stats, and emit
-/// the summary panel. Files are processed in sorted-name order.
-pub fn run_dir(
-    transcriber: &mut Transcriber<SileroVadSplitter>,
-    dir: &Path,
-    truth: &HashMap<i32, TruthRow>,
+/// Transcribe `waveform`, score against `reference` (use `&[]` for no
+/// ground truth). Returns all the inputs both the per-file panel and the
+/// corpus accumulator need.
+fn score_waveform<S: Splitter>(
+    transcriber: &mut Transcriber<S>,
+    waveform: &[f32],
+    sample_rate: u32,
+    reference: &[WerWord],
+    drift_threshold_s: f32,
+) -> Result<Scored, Box<dyn Error>> {
+    let t = Instant::now();
+    let result = transcriber.transcribe(waveform, sample_rate)?;
+    let transcribe_dt = t.elapsed();
+
+    let hyp = hyp_words(&result);
+    let wer = compute_wer(reference, &hyp);
+    let timing = timing_stats(reference, &hyp, &wer.alignment, drift_threshold_s);
+    Ok(Scored {
+        transcribe_dt,
+        hyp,
+        wer,
+        timing,
+    })
+}
+
+/// Stream the whole dataset, transcribe each row, emit the corpus summary.
+pub fn run_dataset<S: Splitter>(
+    transcriber: &mut Transcriber<S>,
+    dataset: &Path,
     limit: usize,
     worst_n: usize,
     drift_threshold_s: f32,
 ) -> Result<(), Box<dyn Error>> {
-    let wavs = collect_wavs(dir, limit)?;
-    let total = wavs.len();
-    info!("processing {} files from {}", total, dir.display());
+    info!("streaming dataset {}", dataset.display());
 
     let mut totals = WerResult {
         substitutions: 0,
@@ -114,62 +109,55 @@ pub fn run_dir(
     let mut total_timing = TimingStats::default();
     let mut total_dur_s = 0.0f32;
     let mut total_xt_s = 0.0f32;
-    let mut per_file: Vec<FileScore> = Vec::with_capacity(total);
+    let mut per_file: Vec<FileScore> = Vec::new();
 
     let started = Instant::now();
-    for (i, path) in wavs.iter().enumerate() {
-        let idx = crate::cli::parse_idx_from_filename(path);
-        let (waveform, sr) = load_wav(path)?;
+    let mut processed = 0usize;
+    for row in DatasetIter::open(dataset)? {
+        if limit > 0 && processed >= limit {
+            break;
+        }
+        let row = row?;
+        let (waveform, sr) = load_wav_from_bytes(&row.audio_bytes)?;
         let duration_s = waveform.len() as f32 / sr as f32;
+        let scored = score_waveform(transcriber, &waveform, sr, &row.words, drift_threshold_s)?;
 
-        let t = Instant::now();
-        let result = transcriber.transcribe(&waveform, sr)?;
-        let dt = t.elapsed();
-
-        let hyp = hyp_words(&result);
-        let ref_words: Vec<WerWord> = idx
-            .and_then(|i| truth.get(&i))
-            .map(|r| r.words.clone())
-            .unwrap_or_default();
-
-        let wer = compute_wer(&ref_words, &hyp);
-        let timing = timing_stats(&ref_words, &hyp, &wer.alignment, drift_threshold_s);
-
-        totals.substitutions += wer.substitutions;
-        totals.deletions += wer.deletions;
-        totals.insertions += wer.insertions;
-        totals.ref_len += wer.ref_len;
-        total_timing.merge(&timing);
+        totals.substitutions += scored.wer.substitutions;
+        totals.deletions += scored.wer.deletions;
+        totals.insertions += scored.wer.insertions;
+        totals.ref_len += scored.wer.ref_len;
+        total_timing.merge(&scored.timing);
         total_dur_s += duration_s;
-        total_xt_s += dt.as_secs_f32();
+        total_xt_s += scored.transcribe_dt.as_secs_f32();
 
         per_file.push(FileScore {
-            idx,
-            path: path.clone(),
+            idx: Some(row.idx),
+            path: PathBuf::from(format!("idx{:05}", row.idx)),
             duration_s,
-            transcribe_s: dt.as_secs_f32(),
-            wer: wer.wer(),
-            subs: wer.substitutions,
-            dels: wer.deletions,
-            ins: wer.insertions,
-            ref_len: wer.ref_len,
-            matched_pairs: timing.matched_pairs,
-            high_drift_pairs: timing.high_drift_pairs,
-            mean_abs_mid_s: timing.mean_abs_mid(),
+            transcribe_s: scored.transcribe_dt.as_secs_f32(),
+            wer: scored.wer.wer(),
+            subs: scored.wer.substitutions,
+            dels: scored.wer.deletions,
+            ins: scored.wer.insertions,
+            ref_len: scored.wer.ref_len,
+            matched_pairs: scored.timing.matched_pairs,
+            high_drift_pairs: scored.timing.high_drift_pairs,
+            mean_abs_mid_s: scored.timing.mean_abs_mid(),
         });
 
-        if (i + 1) % 10 == 0 || i + 1 == total {
+        processed += 1;
+        if processed.is_multiple_of(10) {
             let elapsed = started.elapsed().as_secs_f32();
-            let rate = (i + 1) as f32 / elapsed;
+            let rate = processed as f32 / elapsed;
             info!(
-                "  {}/{}  rate={:.1}/s  elapsed={:.0}s  rolling WER={:.2}%",
-                i + 1,
-                total,
-                rate,
-                elapsed,
+                "  {processed} rows  rate={rate:.1}/s  elapsed={elapsed:.0}s  rolling WER={:.2}%",
                 totals.wer() * 100.0,
             );
         }
+    }
+
+    if per_file.is_empty() {
+        return Err("dataset is empty".into());
     }
 
     print_summary(
@@ -184,18 +172,73 @@ pub fn run_dir(
     Ok(())
 }
 
-/// Sorted list of `.wav` files directly under `dir`, optionally capped at `limit`.
-fn collect_wavs(dir: &Path, limit: usize) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    let mut wavs: Vec<PathBuf> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("wav"))
-        .collect();
-    wavs.sort();
-    if limit > 0 && wavs.len() > limit {
-        wavs.truncate(limit);
-    }
-    if wavs.is_empty() {
-        return Err(format!("no .wav files found in {}", dir.display()).into());
-    }
-    Ok(wavs)
+/// Single-row mode: fetch one `idx` from the dataset and emit the per-file
+/// panel.
+pub fn run_idx<S: Splitter>(
+    transcriber: &mut Transcriber<S>,
+    dataset: &Path,
+    idx: i32,
+    drift_threshold_s: f32,
+) -> Result<(), Box<dyn Error>> {
+    let row = find_row(dataset, idx)?
+        .ok_or_else(|| -> Box<dyn Error> { format!("idx {idx} not found in dataset").into() })?;
+    print_dataset_row(transcriber, &row, drift_threshold_s)
+}
+
+fn print_dataset_row<S: Splitter>(
+    transcriber: &mut Transcriber<S>,
+    row: &DatasetRow,
+    drift_threshold_s: f32,
+) -> Result<(), Box<dyn Error>> {
+    let (waveform, sr) = load_wav_from_bytes(&row.audio_bytes)?;
+    let duration_s = waveform.len() as f32 / sr as f32;
+    info!(
+        "transcribing dataset idx={} ({duration_s:.1}s @ {sr} Hz)",
+        row.idx
+    );
+
+    let scored = score_waveform(transcriber, &waveform, sr, &row.words, drift_threshold_s)?;
+    let label = PathBuf::from(format!("dataset[idx={}]", row.idx));
+    print_single(
+        &label,
+        Some(row.idx),
+        duration_s,
+        scored.transcribe_dt.as_secs_f32(),
+        &row.words,
+        &scored.hyp,
+        true,
+        &scored.wer,
+        &scored.timing,
+        drift_threshold_s,
+    );
+    Ok(())
+}
+
+/// Escape hatch: transcribe an arbitrary WAV from disk, no ground truth.
+pub fn run_custom_wav<S: Splitter>(
+    transcriber: &mut Transcriber<S>,
+    path: &Path,
+    drift_threshold_s: f32,
+) -> Result<(), Box<dyn Error>> {
+    let (waveform, sr) = load_wav(path)?;
+    let duration_s = waveform.len() as f32 / sr as f32;
+    info!(
+        "transcribing custom WAV {} ({duration_s:.1}s @ {sr} Hz)",
+        path.display()
+    );
+
+    let scored = score_waveform(transcriber, &waveform, sr, &[], drift_threshold_s)?;
+    print_single(
+        path,
+        None,
+        duration_s,
+        scored.transcribe_dt.as_secs_f32(),
+        &[],
+        &scored.hyp,
+        false,
+        &scored.wer,
+        &scored.timing,
+        drift_threshold_s,
+    );
+    Ok(())
 }
