@@ -124,6 +124,8 @@ pub fn run_dataset<S: Splitter>(
     let mut total_timing = TimingStats::default();
     let mut total_dur_s = 0.0f32;
     let mut total_xt_s = 0.0f32;
+    let mut total_errors = 0usize;
+    let mut total_ref_len = 0usize;
     let mut per_file: Vec<FileScore> = Vec::new();
 
     let started = Instant::now();
@@ -140,6 +142,10 @@ pub fn run_dataset<S: Splitter>(
         total_timing.merge(&scored.timing);
         total_dur_s += duration_s;
         total_xt_s += scored.transcribe_dt.as_secs_f32();
+        total_errors += scored.result.substitutions()
+            + scored.result.deletions()
+            + scored.result.insertions();
+        total_ref_len += scored.result.ref_token_count();
 
         per_file.push(FileScore::from_result(
             Some(row.idx),
@@ -154,9 +160,14 @@ pub fn run_dataset<S: Splitter>(
         if processed.is_multiple_of(10) {
             let elapsed = started.elapsed().as_secs_f32();
             let rate = processed as f32 / elapsed;
+            let rolling = if total_ref_len == 0 {
+                0.0
+            } else {
+                total_errors as f64 / total_ref_len as f64
+            };
             info!(
                 "  {processed} rows  rate={rate:.1}/s  elapsed={elapsed:.0}s  rolling WER={:.2}%",
-                rolling_wer(&per_file) * 100.0,
+                rolling * 100.0,
             );
         }
     }
@@ -165,18 +176,15 @@ pub fn run_dataset<S: Splitter>(
         return Err("dataset is empty".into());
     }
 
-    print_summary(&per_file, &total_timing, total_dur_s, total_xt_s, worst_n, drift);
+    print_summary(
+        &per_file,
+        &total_timing,
+        total_dur_s,
+        total_xt_s,
+        worst_n,
+        drift,
+    );
     Ok(())
-}
-
-fn rolling_wer(per_file: &[FileScore]) -> f64 {
-    let errors: usize = per_file.iter().map(|f| f.subs + f.dels + f.ins).sum();
-    let refs: usize = per_file.iter().map(|f| f.ref_len).sum();
-    if refs == 0 {
-        0.0
-    } else {
-        errors as f64 / refs as f64
-    }
 }
 
 pub fn run_idx<S: Splitter>(

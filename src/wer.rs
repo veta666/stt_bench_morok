@@ -29,8 +29,12 @@ pub use transcription_normalization::{
 /// from the dataset / model output — upstream tokenization doesn't know
 /// about the Golos-specific й/и conflation, and we don't want to re-fold
 /// inside `compute_wer` on every call.
-pub fn fold_short_i(s: &str) -> String {
+pub fn fold_short_i(s: &str) -> String { 
+    if s.contains(['Й', 'й']) {
     s.replace('й', "и").replace('Й', "И")
+    } else {
+        s.to_owned()
+    }
 }
 
 /// Russian Golos alignment. Words are expected to already have `й → и`
@@ -111,6 +115,19 @@ impl TimingStats {
     }
     pub fn p95_abs_mid(&self) -> f64 {
         self.percentile_abs_mid(0.95)
+    }
+
+    /// Returns `(median, p95)` of `|hyp_mid - ref_mid|` with a single sort —
+    /// cheaper than calling `median_abs_mid` + `p95_abs_mid` back-to-back.
+    pub fn percentiles_abs_mid(&self) -> (f64, f64) {
+        if self.mid_abs_deltas.is_empty() {
+            return (0.0, 0.0);
+        }
+        let mut s = self.mid_abs_deltas.clone();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = s.len() as f64 - 1.0;
+        let pick = |q: f64| s[(n * q.clamp(0.0, 1.0)).round() as usize];
+        (pick(0.5), pick(0.95))
     }
 }
 

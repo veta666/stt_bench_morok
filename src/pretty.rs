@@ -115,6 +115,45 @@ pub fn percentile(sorted_asc: &[f64], q: f64) -> f64 {
     sorted_asc[idx]
 }
 
+const BOX_WIDTH: usize = 78;
+
+fn print_box_top(title: &str) {
+    println!(
+        "\n{CYAN}┌─ {title} {}{RESET}",
+        "─".repeat(BOX_WIDTH.saturating_sub(title.chars().count() + 4)),
+    );
+}
+
+fn print_box_mid() {
+    println!("{CYAN}├{}{RESET}", "─".repeat(BOX_WIDTH));
+}
+
+fn print_box_bottom() {
+    println!("{CYAN}└{}{RESET}\n", "─".repeat(BOX_WIDTH));
+}
+
+fn print_wer_line(result: &AlignmentResult) {
+    println!(
+        "{CYAN}│{RESET} WER:       {wer:6.2} %   {CYAN}│{RESET} S={s} D={d} I={i}  N={n}",
+        wer = result.wer() * 100.0,
+        s = result.substitutions(),
+        d = result.deletions(),
+        i = result.insertions(),
+        n = result.ref_token_count(),
+    );
+}
+
+fn print_ref_hyp(result: &AlignmentResult, reference: &[Word], hypothesis: &[Word]) {
+    println!(
+        "{CYAN}│{RESET} {BOLD}REF{RESET}: {}",
+        fmt_words_colored(Side::Ref, result, reference, hypothesis)
+    );
+    println!(
+        "{CYAN}│{RESET} {BOLD}HYP{RESET}: {}",
+        fmt_words_colored(Side::Hyp, result, reference, hypothesis)
+    );
+}
+
 /// One-file panel: header → REF/HYP colored lines → alignment table.
 #[allow(clippy::too_many_arguments)]
 pub fn print_single(
@@ -138,32 +177,20 @@ pub fn print_single(
     } else {
         0.0
     };
-    let hline = "─".repeat(78);
 
-    println!(
-        "\n{CYAN}┌─ {title} {}{RESET}",
-        "─".repeat(78usize.saturating_sub(title.chars().count() + 4)),
-    );
+    print_box_top(&title);
     println!(
         "{CYAN}│{RESET} Duration:   {duration_s:6.2} s   {CYAN}│{RESET} Inference: {transcribe_s:5.2} s   {CYAN}│{RESET} RTF: {rtf:.3}x"
     );
 
     if have_truth {
-        println!(
-            "{CYAN}│{RESET} WER:       {wer:6.2} %   {CYAN}│{RESET} S={s} D={d} I={i}  N={n}",
-            wer = result.wer() * 100.0,
-            s = result.substitutions(),
-            d = result.deletions(),
-            i = result.insertions(),
-            n = result.ref_token_count(),
-        );
+        print_wer_line(result);
         if t.matched_pairs > 0 {
+            let (med, p95) = t.percentiles_abs_mid();
             println!(
                 "{CYAN}│{RESET} Timing:    matched={mp}  drift mean/median/p95 = {mean:.2}/{med:.2}/{p95:.2}s   high-drift(>{dt:.1}s)={hd}",
                 mp = t.matched_pairs,
                 mean = t.mean_abs_mid(),
-                med = t.median_abs_mid(),
-                p95 = t.p95_abs_mid(),
                 dt = drift_threshold_s,
                 hd = t.high_drift_pairs,
             );
@@ -172,18 +199,11 @@ pub fn print_single(
         println!("{CYAN}│{RESET} {YELLOW}WER:       (no ground truth for this idx){RESET}");
     }
 
-    println!("{CYAN}├{hline}{RESET}");
+    print_box_mid();
 
     if have_truth {
-        println!(
-            "{CYAN}│{RESET} {BOLD}REF{RESET}: {}",
-            fmt_words_colored(Side::Ref, result, reference, hypothesis)
-        );
-        println!(
-            "{CYAN}│{RESET} {BOLD}HYP{RESET}: {}",
-            fmt_words_colored(Side::Hyp, result, reference, hypothesis)
-        );
-        println!("{CYAN}├{hline}{RESET}");
+        print_ref_hyp(result, reference, hypothesis);
+        print_box_mid();
         println!(
             "{CYAN}│{RESET} {BOLD}Alignment{RESET}  ({GREEN}match{RESET}, {RED}sub{RESET}, {BOLD}{RED}del{RESET}, {GREEN}ins{RESET}; ⚠ = drift>{:.1}s):",
             drift_threshold_s
@@ -199,7 +219,7 @@ pub fn print_single(
             .join(" ");
         println!("{CYAN}│{RESET} {BOLD}HYP{RESET}: {joined}");
     }
-    println!("{CYAN}└{hline}{RESET}\n");
+    print_box_bottom();
 }
 
 fn print_alignment_row(
@@ -215,9 +235,8 @@ fn print_alignment_row(
             let r = tokens_word_range(&result.ref_tokens[ref_range.clone()]);
             let r_span = timing.ref_span.expect("Match has ref_span");
             let h_span = timing.hyp_span.expect("Match has hyp_span");
-            let dmid = (0.5 * (h_span.start + h_span.end)
-                - 0.5 * (r_span.start + r_span.end))
-                .abs();
+            let dmid =
+                (0.5 * (h_span.start + h_span.end) - 0.5 * (r_span.start + r_span.end)).abs();
             let flag = if dmid > drift_threshold_s {
                 format!("{YELLOW}⚠{RESET} ")
             } else {
@@ -266,6 +285,81 @@ fn print_alignment_row(
 
 fn fmt_span(label: &str, s: &TimeSpan) -> String {
     format!("{label}[{:>5.2}-{:>5.2}]", s.start, s.end)
+}
+
+/// WER-only sibling of [`print_single`]: same colored REF/HYP diff, but
+/// the header omits timing fields and the alignment table drops the
+/// per-op time spans + Δmid column. Use this for hypothesis sources
+/// that don't emit word-level timestamps (e.g. the Python script bench).
+pub fn print_single_wer_only(
+    label: &Path,
+    idx: Option<i32>,
+    duration_s: f32,
+    subprocess_s: f32,
+    reference: &[Word],
+    hypothesis: &[Word],
+    result: &AlignmentResult,
+) {
+    let title = match idx {
+        Some(i) => format!("{} (idx={i})", label.display()),
+        None => label.display().to_string(),
+    };
+
+    print_box_top(&title);
+    println!(
+        "{CYAN}│{RESET} Duration:   {duration_s:6.2} s   {CYAN}│{RESET} Subprocess: {subprocess_s:6.2} s",
+    );
+    print_wer_line(result);
+    print_box_mid();
+    print_ref_hyp(result, reference, hypothesis);
+    print_box_mid();
+    println!(
+        "{CYAN}│{RESET} {BOLD}Alignment{RESET}  ({GREEN}match{RESET}, {RED}sub{RESET}, {BOLD}{RED}del{RESET}, {GREEN}ins{RESET}):",
+    );
+    for op in &result.ops {
+        print_alignment_row_no_timing(op, result, reference, hypothesis);
+    }
+    print_box_bottom();
+}
+
+fn print_alignment_row_no_timing(
+    op: &Op,
+    result: &AlignmentResult,
+    reference: &[Word],
+    hypothesis: &[Word],
+) {
+    match op {
+        Op::Match { ref_range, .. } => {
+            let r = tokens_word_range(&result.ref_tokens[ref_range.clone()]);
+            println!(
+                "{CYAN}│{RESET}     {GREEN}OK {RESET}  {tx}",
+                tx = join_text(reference, r),
+            );
+        }
+        Op::Sub { ref_idx, hyp_idx } => {
+            let r = token_word_range(&result.ref_tokens[*ref_idx]);
+            let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+            println!(
+                "{CYAN}│{RESET}     {RED}SUB{RESET} {rtxt:<24}  →  {htxt}",
+                rtxt = join_text(reference, r),
+                htxt = join_text(hypothesis, h),
+            );
+        }
+        Op::Del { ref_idx } => {
+            let r = token_word_range(&result.ref_tokens[*ref_idx]);
+            println!(
+                "{CYAN}│{RESET}     {BOLD}{RED}DEL{RESET} {rtxt:<24}  →  {DIM}<missing>{RESET}",
+                rtxt = join_text(reference, r),
+            );
+        }
+        Op::Ins { hyp_idx } => {
+            let h = token_word_range(&result.hyp_tokens[*hyp_idx]);
+            println!(
+                "{CYAN}│{RESET}     {GREEN}INS{RESET} {DIM}<missing>{RESET}                  →  {htxt}",
+                htxt = join_text(hypothesis, h),
+            );
+        }
+    }
 }
 
 /// Corpus-level summary: overall WER (sum-based), per-file WER quantiles,
@@ -325,15 +419,13 @@ pub fn print_summary(
     );
 
     if total_timing.matched_pairs > 0 {
-        let drift_share = total_timing.high_drift_pairs as f64
-            / total_timing.matched_pairs.max(1) as f64
-            * 100.0;
+        let drift_share =
+            total_timing.high_drift_pairs as f64 / total_timing.matched_pairs.max(1) as f64 * 100.0;
+        let (med, p95) = total_timing.percentiles_abs_mid();
         println!(
             "   Timing (matched={mp}):  drift mean/median/p95 = {mean:.2}/{med:.2}/{p95:.2}s   high-drift(>{dt:.1}s)={hd} ({share:.1}%)",
             mp = total_timing.matched_pairs,
             mean = total_timing.mean_abs_mid(),
-            med = total_timing.median_abs_mid(),
-            p95 = total_timing.p95_abs_mid(),
             dt = drift_threshold_s,
             hd = total_timing.high_drift_pairs,
             share = drift_share,

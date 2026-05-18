@@ -118,15 +118,15 @@ fn decode_row(batch: &RecordBatch, row: usize) -> Result<DatasetRow, Box<dyn Err
     let start_arr = col!(struct_arr, "start", Float32Array);
     let end_arr = col!(struct_arr, "end", Float32Array);
 
-    let words: Vec<Word> = (0..struct_arr.len())
-        .map(|k| {
-            Word::new(
-                fold_short_i(text_arr.value(k)),
-                start_arr.value(k) as f64,
-                end_arr.value(k) as f64,
-            )
-        })
-        .collect();
+    let n = struct_arr.len();
+    let mut words: Vec<Word> = Vec::with_capacity(n);
+    for k in 0..n {
+        words.push(Word::new(
+            fold_short_i(text_arr.value(k)),
+            start_arr.value(k) as f64,
+            end_arr.value(k) as f64,
+        ));
+    }
 
     Ok(DatasetRow {
         idx: idx_arr.value(row),

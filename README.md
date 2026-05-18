@@ -23,20 +23,20 @@ run.
 
 ```bash
 # Corpus mode: stream the whole dataset, emit summary + worst-N panel.
-cargo run --release
+cargo run --release --bin gigaam_morok_bench
 
 # Subset for a quick sanity check.
-cargo run --release -- --limit 50
+cargo run --release --bin gigaam_morok_bench -- --limit 50
 
 # Single dataset row, pretty per-file panel with colored word-level diff.
-cargo run --release -- --idx 42
+cargo run --release --bin gigaam_morok_bench -- --idx 42
 
 # Custom WAV outside the dataset (no ground truth → no WER).
-cargo run --release -- --audio /tmp/test.wav
+cargo run --release --bin gigaam_morok_bench -- --audio /tmp/test.wav
 
 # Swap Silero VAD for the no-VAD fixed-window splitter (faster startup,
 # worse WER on long-form audio).
-cargo run --release -- --splitter fixed
+cargo run --release --bin gigaam_morok_bench -- --splitter fixed
 ```
 
 Useful flags:
@@ -71,11 +71,13 @@ flags each high-drift word inline in the alignment table.
 
 ```
 src/
-├── lib.rs       # model glue: load_wav, build_rnnt_transcriber{,_fixed}
-├── main.rs      # CLI entry, dispatch
-├── cli.rs       # clap Args + SplitterChoice
-├── dataset.rs   # streaming reader for the HF parquet (audio + words)
-├── bench.rs     # run_dataset / run_idx / run_custom_wav + score_waveform
-├── pretty.rs    # ANSI single-file panel + corpus summary
-└── wer.rs       # normalize_word, compute_wer, timing_stats
+├── lib.rs                       # model glue: load_wav, build_rnnt_transcriber{,_fixed}
+├── cli.rs                       # clap Args + SplitterChoice
+├── dataset.rs                   # streaming reader for the HF parquet (audio + words)
+├── bench.rs                     # run_dataset / run_idx / run_custom_wav + score_waveform
+├── pretty.rs                    # ANSI single-file panel + corpus summary
+├── wer.rs                       # normalize_word, compute_wer, timing_stats
+└── bin/
+    ├── gigaam_morok_bench.rs    # CLI entry: morok-backed bench
+    └── gigaam_py_bench.rs       # CLI entry: Python-script-backed bench
 ```

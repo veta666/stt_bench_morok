@@ -2037,7 +2037,7 @@ dependencies = [
 [[package]]
 name = "morok-arch"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "serde",
  "snafu 0.9.0",
@@ -2046,7 +2046,7 @@ dependencies = [
 [[package]]
 name = "morok-codegen"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "itertools",
  "morok-device",
@@ -2060,7 +2060,7 @@ dependencies = [
 [[package]]
 name = "morok-device"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "enum_delegate",
  "memmap2",
@@ -2077,7 +2077,7 @@ dependencies = [
 [[package]]
 name = "morok-dtype"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "enumset",
  "proptest",
@@ -2089,7 +2089,7 @@ dependencies = [
 [[package]]
 name = "morok-ir"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "bon",
  "derive_more",
@@ -2111,7 +2111,7 @@ dependencies = [
 [[package]]
 name = "morok-macros"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "convert_case 0.10.0",
  "proc-macro2",
@@ -2122,7 +2122,7 @@ dependencies = [
 [[package]]
 name = "morok-model"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "bon",
  "hf-hub",
@@ -2150,7 +2150,7 @@ dependencies = [
 [[package]]
 name = "morok-runtime"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "libc",
  "libffi",
@@ -2172,7 +2172,7 @@ dependencies = [
 [[package]]
 name = "morok-schedule"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "bincode",
  "bon",
@@ -2195,7 +2195,7 @@ dependencies = [
 [[package]]
 name = "morok-tensor"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git#b44079e24a3022b7e10b2a3d0ede611f192b9b31"
+source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
 dependencies = [
  "bon",
  "morok-codegen",
@@ -3857,9 +3857,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.10"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68d6fdd9f81c2819c9a8b0e0cd91660e7746a8e6ea2ba7c6b2b057985f6bcb51"
+checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "bitflags 2.11.1",
  "bytes",
@@ -3945,7 +3945,7 @@ dependencies = [
 [[package]]
 name = "transcription-normalization"
 version = "0.1.0"
-source = "git+https://github.com/mexus/transcription-normalization.git#5d91706397d1556d1f71163184f432e60e23d58a"
+source = "git+https://github.com/mexus/transcription-normalization.git#831650329fd05399b98fdca7214574d26ddeeeae"
 
 [[package]]
 name = "transpose"

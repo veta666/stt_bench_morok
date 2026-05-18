@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-morok-model = { git = "https://github.com/npatsakula/morok.git "}
+# morok-model = { git = "https://github.com/npatsakula/morok.git ", branch = "model_gigaam_fix"}
+morok-model = { git = "https://github.com/npatsakula/morok.git ", rev = "fdd6c5f1"}
 transcription-normalization = { git = "https://github.com/mexus/transcription-normalization.git" }
 hound = "3.5"
 tracing-subscriber = "0.3.23"
