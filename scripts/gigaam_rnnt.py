@@ -5,15 +5,20 @@ Two modes:
 
 * Single file (legacy):
     `python gigaam_rnnt.py path/to/audio.wav` prints the transcription to stdout.
+    With `--show-timing`, prints `<inference_s>\t<text>` instead so the Rust
+    bench can compute an apples-to-apples RTF (inference only, no startup).
 
 * Batch parquet (drives the Python-vs-Rust comparison test):
     `python gigaam_rnnt.py --parquet data/golos_long.parquet --limit 100`
-    emits one TSV line per row, `<idx>\t<text>`, on stdout. `tests/gigaam_py_compare.rs`
-    consumes that stream and scores it with `transcription_normalization`.
+    emits one TSV line per row, `<idx>\t<inference_s>\t<text>`, on stdout.
+    `src/bin/gigaam_py_bench.rs` consumes that stream, scores it with
+    `transcription_normalization`, and aggregates the per-row inference times
+    into corpus RTF.
 """
 import argparse
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import torch
@@ -33,7 +38,7 @@ CHUNK_SECONDS = 20
 MIN_TAIL_SAMPLES = SAMPLE_RATE
 
 
-def transcribe(model, audio_path: Path) -> str:
+def transcribe_with_timing(model, audio_path: Path) -> tuple[str, float]:
     """Run GigaAM v3 RN-T on a single audio file in fixed 20 s chunks.
 
     No VAD: chunks are split blindly at `CHUNK_SECONDS` boundaries, so a
@@ -42,12 +47,21 @@ def transcribe(model, audio_path: Path) -> str:
     WER is much worse here than in `gigaam_morok_bench`, the seam is the
     usual suspect.
 
-    Returns a single space-joined hypothesis (empty chunks dropped).
+    Returns `(text, inference_s)` where `inference_s` covers the encoder +
+    decoder loop only — `load_audio`, tensor moves, and the final string
+    join are excluded so the value lines up with `bench.rs::score_waveform`'s
+    `transcribe_dt` (the basis for the morok bench's RTF).
     """
     wav = load_audio(str(audio_path)).to(model._device).to(model._dtype)
     chunk = CHUNK_SECONDS * SAMPLE_RATE
+    is_cuda = model._device.type == "cuda"
 
     parts: list[str] = []
+    # CUDA kernels are launched async; flush any pending work before/after
+    # so perf_counter() captures real GPU time, not just enqueue time.
+    if is_cuda:
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
     with torch.inference_mode():
         for start in range(0, wav.shape[-1], chunk):
             piece = wav[start : start + chunk]
@@ -63,8 +77,20 @@ def transcribe(model, audio_path: Path) -> str:
             # decode() returns [(text, token_ids, token_frames)] per batch
             # element; batch=1, so [0][0] is the text of the only sample.
             parts.append(model.decoding.decode(model.head, encoded, encoded_len)[0][0])
+    if is_cuda:
+        torch.cuda.synchronize()
+    inference_s = time.perf_counter() - t0
 
-    return " ".join(p.strip() for p in parts if p.strip())
+    return " ".join(p.strip() for p in parts if p.strip()), inference_s
+
+
+def transcribe(model, audio_path: Path) -> str:
+    """Backwards-compatible wrapper: same as `transcribe_with_timing` but
+    drops the inference time. Used by `scripts/personal_test_compare.py`
+    which imports `transcribe` directly.
+    """
+    text, _ = transcribe_with_timing(model, audio_path)
+    return text
 
 
 def run_parquet(model, parquet_path: Path, limit: int) -> None:
@@ -86,10 +112,11 @@ def run_parquet(model, parquet_path: Path, limit: int) -> None:
             with tempfile.NamedTemporaryFile(suffix=".wav") as tf:
                 tf.write(audio_bytes)
                 tf.flush()
-                text = transcribe(model, Path(tf.name))
-            # TSV: idx \t text. text is whitespace-collapsed already, so no
-            # tabs/newlines slip through and the Rust side parses with split_once.
-            print(f"{idx}\t{text}", flush=True)
+                text, inference_s = transcribe_with_timing(model, Path(tf.name))
+            # TSV: idx \t inference_s \t text. text is whitespace-collapsed
+            # already, so no tabs/newlines slip through and the Rust side
+            # parses with two split_once calls.
+            print(f"{idx}\t{inference_s:.6f}\t{text}", flush=True)
             processed += 1
 
 
@@ -114,19 +141,28 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="batch mode: cap the number of rows processed (0 = all)",
     )
+    parser.add_argument(
+        "--show-timing",
+        action="store_true",
+        help="single-file mode: print `<inference_s>\\t<text>` instead of just text",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    model = gigaam.load_model("rnnt")
+    model = gigaam.load_model("rnnt", device="cpu")
 
     if args.parquet is not None:
         run_parquet(model, args.parquet, args.limit)
         return
 
     audio = args.audio.expanduser().resolve() if args.audio is not None else DEFAULT_AUDIO
-    print(transcribe(model, audio))
+    text, inference_s = transcribe_with_timing(model, audio)
+    if args.show_timing:
+        print(f"{inference_s:.6f}\t{text}")
+    else:
+        print(text)
 
 
 if __name__ == "__main__":

@@ -29,9 +29,9 @@ pub use transcription_normalization::{
 /// from the dataset / model output — upstream tokenization doesn't know
 /// about the Golos-specific й/и conflation, and we don't want to re-fold
 /// inside `compute_wer` on every call.
-pub fn fold_short_i(s: &str) -> String { 
+pub fn fold_short_i(s: &str) -> String {
     if s.contains(['Й', 'й']) {
-    s.replace('й', "и").replace('Й', "И")
+        s.replace('й', "и").replace('Й', "И")
     } else {
         s.to_owned()
     }

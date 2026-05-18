@@ -69,15 +69,18 @@ fn tokenize_hyp(text: &str) -> Vec<Word> {
         .collect()
 }
 
-fn ground_truth(dataset: &Path, limit: usize) -> Result<HashMap<i32, Vec<Word>>, Box<dyn Error>> {
+fn ground_truth(
+    dataset: &Path,
+    limit: usize,
+) -> Result<HashMap<i32, (Vec<Word>, f32)>, Box<dyn Error>> {
     let iter = DatasetIter::open(dataset)?;
-    let mut out: HashMap<i32, Vec<Word>> = HashMap::new();
+    let mut out: HashMap<i32, (Vec<Word>, f32)> = HashMap::new();
     for row in iter {
         if limit > 0 && out.len() >= limit {
             break;
         }
         let row = row?;
-        out.insert(row.idx, row.words);
+        out.insert(row.idx, (row.words, row.duration));
     }
     Ok(out)
 }
@@ -98,6 +101,7 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
         args.dataset.display(),
         args.limit,
     );
+    let subprocess_started = Instant::now();
     let mut child = Command::new(python_bin())
         .arg(&args.script)
         .arg("--parquet")
@@ -116,14 +120,21 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
     let mut total_dels = 0usize;
     let mut total_ins = 0usize;
     let mut total_ref = 0usize;
+    let mut total_dur_s = 0.0f32;
+    let mut total_inference_s = 0.0f32;
 
     for (line_no, line) in reader.lines().enumerate() {
         let line = line?;
-        let (idx_s, text) = line
+        // 3-column TSV: idx \t inference_s \t text.
+        let (idx_s, rest) = line
+            .split_once('\t')
+            .ok_or_else(|| format!("malformed TSV at line {}: {line:?}", line_no + 1))?;
+        let (inference_s_s, text) = rest
             .split_once('\t')
             .ok_or_else(|| format!("malformed TSV at line {}: {line:?}", line_no + 1))?;
         let idx: i32 = idx_s.parse()?;
-        let reference = truth.get(&idx).ok_or_else(|| {
+        let inference_s: f32 = inference_s_s.parse()?;
+        let (reference, duration) = truth.get(&idx).map(|(w, d)| (w, *d)).ok_or_else(|| {
             format!(
                 "idx {idx} from python not in first {} dataset rows",
                 args.limit
@@ -141,6 +152,8 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
         total_dels += dels;
         total_ins += ins;
         total_ref += ref_len;
+        total_dur_s += duration;
+        total_inference_s += inference_s;
 
         scored.push(RowScore {
             idx,
@@ -166,6 +179,7 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
     }
 
     let status = child.wait()?;
+    let subprocess_s = subprocess_started.elapsed().as_secs_f32();
     if !status.success() {
         return Err(format!("python subprocess exited with {status}").into());
     }
@@ -174,12 +188,30 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
     }
 
     let corpus_wer = (total_subs + total_dels + total_ins) as f64 / total_ref as f64;
+    // RTF uses the sum of per-row Python-side inference timings (encoder +
+    // decoder loop only, CUDA-synchronized), matching what `bench.rs::
+    // score_waveform` measures in the morok bench. Subprocess wall-clock
+    // is reported separately for context — its delta vs total_inference_s
+    // is roughly the Python startup + model-load overhead.
+    let rtf = if total_dur_s > 0.0 {
+        total_inference_s as f64 / total_dur_s as f64
+    } else {
+        0.0
+    };
     println!();
     println!("=== gigaam_rnnt.py vs ground truth ===");
     println!("rows scored : {}", scored.len());
     println!("ref tokens  : {total_ref}");
     println!("S / D / I   : {total_subs} / {total_dels} / {total_ins}");
     println!("corpus WER  : {:.2}%", corpus_wer * 100.0);
+    println!(
+        "audio total : {:.1}s ({:.2}h)",
+        total_dur_s,
+        total_dur_s / 3600.0,
+    );
+    println!("subprocess  : {subprocess_s:.1}s  (wall-clock, incl. startup + model load)");
+    println!("inference   : {total_inference_s:.1}s  (sum of per-row Python timings)");
+    println!("RTF         : {rtf:.3}x  (inference / audio, comparable to gigaam_morok_bench)");
 
     if args.worst > 0 {
         let mut sorted: Vec<&RowScore> = scored.iter().collect();
@@ -224,26 +256,32 @@ fn run_single(args: &Args, idx: i32) -> Result<(), Box<dyn Error>> {
     std::fs::write(&tmp_path, &row.audio_bytes)?;
 
     eprintln!(
-        "transcribing idx={idx} via {} {} {}",
+        "transcribing idx={idx} via {} {} {} --show-timing",
         python_bin(),
         args.script.display(),
         tmp_path.display()
     );
-    let t = Instant::now();
     let output = Command::new(python_bin())
         .arg(&args.script)
         .arg(&tmp_path)
+        .arg("--show-timing")
         .stderr(Stdio::inherit())
         .output();
-    let subprocess_s = t.elapsed().as_secs_f32();
     let _ = std::fs::remove_file(&tmp_path);
     let output = output?;
     if !output.status.success() {
         return Err(format!("python subprocess exited with {}", output.status).into());
     }
 
-    let hyp_text = String::from_utf8(output.stdout)?;
-    let hyp = tokenize_hyp(hyp_text.trim());
+    // With --show-timing the script prints `<inference_s>\t<text>` so we
+    // can report the same inference-only RTF as gigaam_morok_bench.
+    let stdout = String::from_utf8(output.stdout)?;
+    let stdout = stdout.trim();
+    let (inference_s_s, hyp_text) = stdout
+        .split_once('\t')
+        .ok_or_else(|| format!("python single-mode output missing timing column: {stdout:?}"))?;
+    let inference_s: f32 = inference_s_s.parse()?;
+    let hyp = tokenize_hyp(hyp_text);
     let result = compute_wer(&row.words, &hyp);
 
     let label = PathBuf::from(format!("gigaam_rnnt.py[idx={idx}]"));
@@ -251,7 +289,7 @@ fn run_single(args: &Args, idx: i32) -> Result<(), Box<dyn Error>> {
         &label,
         Some(idx),
         row.duration,
-        subprocess_s,
+        inference_s,
         &row.words,
         &hyp,
         &result,

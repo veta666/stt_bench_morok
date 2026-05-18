@@ -295,7 +295,7 @@ pub fn print_single_wer_only(
     label: &Path,
     idx: Option<i32>,
     duration_s: f32,
-    subprocess_s: f32,
+    inference_s: f32,
     reference: &[Word],
     hypothesis: &[Word],
     result: &AlignmentResult,
@@ -305,9 +305,15 @@ pub fn print_single_wer_only(
         None => label.display().to_string(),
     };
 
+    let rtf = if duration_s > 0.0 {
+        inference_s / duration_s
+    } else {
+        0.0
+    };
+
     print_box_top(&title);
     println!(
-        "{CYAN}│{RESET} Duration:   {duration_s:6.2} s   {CYAN}│{RESET} Subprocess: {subprocess_s:6.2} s",
+        "{CYAN}│{RESET} Duration:   {duration_s:6.2} s   {CYAN}│{RESET} Inference:  {inference_s:6.2} s   {CYAN}│{RESET} RTF: {rtf:.3}x",
     );
     print_wer_line(result);
     print_box_mid();

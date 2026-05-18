@@ -142,9 +142,8 @@ pub fn run_dataset<S: Splitter>(
         total_timing.merge(&scored.timing);
         total_dur_s += duration_s;
         total_xt_s += scored.transcribe_dt.as_secs_f32();
-        total_errors += scored.result.substitutions()
-            + scored.result.deletions()
-            + scored.result.insertions();
+        total_errors +=
+            scored.result.substitutions() + scored.result.deletions() + scored.result.insertions();
         total_ref_len += scored.result.ref_token_count();
 
         per_file.push(FileScore::from_result(
