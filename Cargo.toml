@@ -1,11 +1,10 @@
 [package]
-name = "stt_bench"
+name = "stt_bench_svod"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# morok-model = { git = "https://github.com/npatsakula/morok.git ", branch = "model_gigaam_fix"}
-morok-model = { git = "https://github.com/npatsakula/morok.git ", rev = "fdd6c5f1"}
+svod-model = { git = "https://github.com/npatsakula/svod.git ", rev = "6c0bca425330bab99e17aa484d213d5239ae0d08"}
 transcription-normalization = { git = "https://github.com/mexus/transcription-normalization.git" }
 hound = "3.5"
 tracing-subscriber = "0.3.23"

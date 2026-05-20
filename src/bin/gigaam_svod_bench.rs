@@ -1,15 +1,15 @@
-//! `stt_bench` binary: thin entry point. All heavy lifting lives in the
+//! `stt_bench_svod` binary: thin entry point. All heavy lifting lives in the
 //! sibling lib modules (`cli`, `dataset`, `bench`, `pretty`, `wer`).
 
 use std::error::Error;
 
 use clap::Parser;
-use morok_model::audio::Splitter;
-use morok_model::gigaam::{TranscribeOpts, Transcriber};
+use svod_model::audio::Splitter;
+use svod_model::gigaam::{TranscribeOpts, Transcriber};
 
-use stt_bench::bench::{run_custom_wav, run_dataset, run_idx};
-use stt_bench::cli::{Args, SplitterChoice};
-use stt_bench::{build_rnnt_transcriber, build_rnnt_transcriber_fixed};
+use stt_bench_svod::bench::{run_custom_wav, run_dataset, run_idx};
+use stt_bench_svod::cli::{Args, SplitterChoice};
+use stt_bench_svod::{build_rnnt_transcriber, build_rnnt_transcriber_fixed};
 
 fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();

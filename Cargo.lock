@@ -1057,9 +1057,9 @@ dependencies = [
 
 [[package]]
 name = "enumset"
-version = "1.1.12"
+version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f96a4a12fe60ac746ae295a1a4ecb5bb02debc20856506c8635288065f142de"
+checksum = "839c4174b41e75c8f7306110b2c51996a293b8d1d850edd529011841d9fede7d"
 dependencies = [
  "enumset_derive",
 ]
@@ -2035,186 +2035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "morok-arch"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "serde",
- "snafu 0.9.0",
-]
-
-[[package]]
-name = "morok-codegen"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "itertools",
- "morok-device",
- "morok-dtype",
- "morok-ir",
- "morok-schedule",
- "snafu 0.8.9",
- "tracing",
-]
-
-[[package]]
-name = "morok-device"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "enum_delegate",
- "memmap2",
- "morok-dtype",
- "morok-ir",
- "ndarray",
- "once_cell",
- "parking_lot 0.12.5",
- "smallvec",
- "snafu 0.8.9",
- "tracing",
-]
-
-[[package]]
-name = "morok-dtype"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "enumset",
- "proptest",
- "proptest-derive",
- "serde",
- "strum 0.27.2",
-]
-
-[[package]]
-name = "morok-ir"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "bon",
- "derive_more",
- "half",
- "itertools",
- "libm",
- "morok-dtype",
- "morok-macros",
- "papaya",
- "ptree",
- "serde",
- "smallvec",
- "snafu 0.8.9",
- "strum 0.27.2",
- "tracing",
- "xxhash-rust",
-]
-
-[[package]]
-name = "morok-macros"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "convert_case 0.10.0",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "morok-model"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "bon",
- "hf-hub",
- "hound",
- "morok-arch",
- "morok-device",
- "morok-dtype",
- "morok-ir",
- "morok-macros",
- "morok-runtime",
- "morok-tensor",
- "ndarray",
- "nom",
- "prost",
- "realfft",
- "repugnant-pickle",
- "safetensors",
- "serde",
- "serde_json",
- "snafu 0.9.0",
- "tracing-subscriber",
- "zip",
-]
-
-[[package]]
-name = "morok-runtime"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "libc",
- "libffi",
- "memmap2",
- "morok-codegen",
- "morok-device",
- "morok-dtype",
- "morok-ir",
- "object",
- "once_cell",
- "papaya",
- "parking_lot 0.12.5",
- "rayon",
- "smallvec",
- "snafu 0.8.9",
- "tracing",
-]
-
-[[package]]
-name = "morok-schedule"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "bincode",
- "bon",
- "dirs",
- "indexmap",
- "itertools",
- "morok-device",
- "morok-dtype",
- "morok-ir",
- "morok-macros",
- "once_cell",
- "rayon",
- "serde",
- "sled",
- "smallvec",
- "snafu 0.8.9",
- "tracing",
-]
-
-[[package]]
-name = "morok-tensor"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/npatsakula/morok.git?rev=fdd6c5f1#fdd6c5f1f5bccd3c96e38d313d025adf1d2f3c04"
-dependencies = [
- "bon",
- "morok-codegen",
- "morok-device",
- "morok-dtype",
- "morok-ir",
- "morok-runtime",
- "morok-schedule",
- "ndarray",
- "once_cell",
- "papaya",
- "parking_lot 0.12.5",
- "smallvec",
- "snafu 0.8.9",
- "strum 0.28.0",
- "tracing",
-]
-
-[[package]]
 name = "native-tls"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2300,9 +2120,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
+checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "num-integer"
@@ -3526,14 +3346,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "stt_bench"
+name = "stt_bench_svod"
 version = "0.1.0"
 dependencies = [
  "arrow",
  "clap",
  "hound",
- "morok-model",
  "parquet",
+ "svod-model",
  "tracing",
  "tracing-subscriber",
  "transcription-normalization",
@@ -3544,6 +3364,186 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "svod-arch"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "serde",
+ "snafu 0.9.0",
+]
+
+[[package]]
+name = "svod-codegen"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "itertools",
+ "snafu 0.8.9",
+ "svod-device",
+ "svod-dtype",
+ "svod-ir",
+ "svod-schedule",
+ "tracing",
+]
+
+[[package]]
+name = "svod-device"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "enum_delegate",
+ "memmap2",
+ "ndarray",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "smallvec",
+ "snafu 0.8.9",
+ "svod-dtype",
+ "svod-ir",
+ "tracing",
+]
+
+[[package]]
+name = "svod-dtype"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "enumset",
+ "proptest",
+ "proptest-derive",
+ "serde",
+ "strum 0.27.2",
+]
+
+[[package]]
+name = "svod-ir"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "bon",
+ "derive_more",
+ "half",
+ "itertools",
+ "libm",
+ "papaya",
+ "ptree",
+ "serde",
+ "smallvec",
+ "snafu 0.8.9",
+ "strum 0.27.2",
+ "svod-dtype",
+ "svod-macros",
+ "tracing",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "svod-macros"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "convert_case 0.10.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "svod-model"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "bon",
+ "hf-hub",
+ "hound",
+ "ndarray",
+ "nom",
+ "prost",
+ "realfft",
+ "repugnant-pickle",
+ "safetensors",
+ "serde",
+ "serde_json",
+ "snafu 0.9.0",
+ "svod-arch",
+ "svod-device",
+ "svod-dtype",
+ "svod-ir",
+ "svod-macros",
+ "svod-runtime",
+ "svod-tensor",
+ "tracing-subscriber",
+ "zip",
+]
+
+[[package]]
+name = "svod-runtime"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "libc",
+ "libffi",
+ "memmap2",
+ "object",
+ "once_cell",
+ "papaya",
+ "parking_lot 0.12.5",
+ "rayon",
+ "smallvec",
+ "snafu 0.8.9",
+ "svod-codegen",
+ "svod-device",
+ "svod-dtype",
+ "svod-ir",
+ "tracing",
+]
+
+[[package]]
+name = "svod-schedule"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "bincode",
+ "bon",
+ "dirs",
+ "indexmap",
+ "itertools",
+ "once_cell",
+ "rayon",
+ "serde",
+ "sled",
+ "smallvec",
+ "snafu 0.8.9",
+ "svod-device",
+ "svod-dtype",
+ "svod-ir",
+ "svod-macros",
+ "tracing",
+]
+
+[[package]]
+name = "svod-tensor"
+version = "0.1.0-alpha.3"
+source = "git+https://github.com/npatsakula/svod.git?rev=6c0bca425330bab99e17aa484d213d5239ae0d08#6c0bca425330bab99e17aa484d213d5239ae0d08"
+dependencies = [
+ "bon",
+ "ndarray",
+ "once_cell",
+ "papaya",
+ "parking_lot 0.12.5",
+ "smallvec",
+ "snafu 0.8.9",
+ "strum 0.28.0",
+ "svod-codegen",
+ "svod-device",
+ "svod-dtype",
+ "svod-ir",
+ "svod-runtime",
+ "svod-schedule",
+ "tracing",
+]
 
 [[package]]
 name = "syn"

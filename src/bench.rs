@@ -19,8 +19,8 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use morok_model::audio::Splitter;
-use morok_model::gigaam::{TranscribeResult, Transcriber};
+use svod_model::audio::Splitter;
+use svod_model::gigaam::{TranscribeResult, Transcriber};
 use tracing::info;
 
 use crate::dataset::{DatasetIter, DatasetRow, find_row};

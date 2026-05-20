@@ -1,20 +1,20 @@
-//! STT benchmark library wrapping `morok_model::gigaam` inference.
+//! STT benchmark library wrapping `svod_model::gigaam` inference.
 //!
 //! The functions in this module mirror the upstream RN-T example at
-//! <https://github.com/npatsakula/morok/blob/main/model/examples/gigaam_rnnt_infer.rs>,
+//! <https://github.com/npatsakula/svod/blob/main/model/examples/gigaam_rnnt_infer.rs>,
 //! refactored so the load/build/transcribe steps can be reused by a benchmark
 //! driver instead of being glued together inside `main`.
 
 use std::error::Error;
 use std::path::Path;
 
-use morok_model::audio::FixedLengthSplitter;
-use morok_model::gigaam::{GigaAm, TranscribeOpts, Transcriber};
-use morok_model::silero_vad::SileroVadSplitter;
+use svod_model::audio::FixedLengthSplitter;
+use svod_model::gigaam::{GigaAm, TranscribeOpts, Transcriber};
+use svod_model::silero_vad::SileroVadSplitter;
 
-pub use morok_model::audio;
-pub use morok_model::gigaam;
-pub use morok_model::silero_vad;
+pub use svod_model::audio;
+pub use svod_model::gigaam;
+pub use svod_model::silero_vad;
 use tracing::info;
 
 pub mod bench;
@@ -58,7 +58,7 @@ fn load_rnnt_model(repo: &str, revision: &str) -> Result<GigaAm, Box<dyn Error>>
     if model.head.as_rnnt().is_none() {
         return Err(format!(
             "{repo}@{revision} has a CTC head, not RN-T. \
-             Set MOROK_RNNT_REVISION to an RN-T revision."
+             Set svod_RNNT_REVISION to an RN-T revision."
         )
         .into());
     }

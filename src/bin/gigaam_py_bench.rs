@@ -19,9 +19,9 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use stt_bench::dataset::{DatasetIter, find_row};
-use stt_bench::pretty::print_single_wer_only;
-use stt_bench::wer::{Word, compute_wer, fold_short_i};
+use stt_bench_svod::dataset::{DatasetIter, find_row};
+use stt_bench_svod::pretty::print_single_wer_only;
+use stt_bench_svod::wer::{Word, compute_wer, fold_short_i};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -60,7 +60,7 @@ struct RowScore {
 }
 
 fn python_bin() -> String {
-    std::env::var("STT_BENCH_PYTHON").unwrap_or_else(|_| "python".into())
+    std::env::var("stt_bench_svod_PYTHON").unwrap_or_else(|_| "python".into())
 }
 
 fn tokenize_hyp(text: &str) -> Vec<Word> {
@@ -69,6 +69,7 @@ fn tokenize_hyp(text: &str) -> Vec<Word> {
         .collect()
 }
 
+#[allow(clippy::type_complexity)]
 fn ground_truth(
     dataset: &Path,
     limit: usize,
@@ -190,7 +191,7 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
     let corpus_wer = (total_subs + total_dels + total_ins) as f64 / total_ref as f64;
     // RTF uses the sum of per-row Python-side inference timings (encoder +
     // decoder loop only, CUDA-synchronized), matching what `bench.rs::
-    // score_waveform` measures in the morok bench. Subprocess wall-clock
+    // score_waveform` measures in the svod bench. Subprocess wall-clock
     // is reported separately for context — its delta vs total_inference_s
     // is roughly the Python startup + model-load overhead.
     let rtf = if total_dur_s > 0.0 {
@@ -211,7 +212,7 @@ fn run_corpus(args: &Args) -> Result<(), Box<dyn Error>> {
     );
     println!("subprocess  : {subprocess_s:.1}s  (wall-clock, incl. startup + model load)");
     println!("inference   : {total_inference_s:.1}s  (sum of per-row Python timings)");
-    println!("RTF         : {rtf:.3}x  (inference / audio, comparable to gigaam_morok_bench)");
+    println!("RTF         : {rtf:.3}x  (inference / audio, comparable to gigaam_svod_bench)");
 
     if args.worst > 0 {
         let mut sorted: Vec<&RowScore> = scored.iter().collect();
@@ -274,7 +275,7 @@ fn run_single(args: &Args, idx: i32) -> Result<(), Box<dyn Error>> {
     }
 
     // With --show-timing the script prints `<inference_s>\t<text>` so we
-    // can report the same inference-only RTF as gigaam_morok_bench.
+    // can report the same inference-only RTF as gigaam_svod_bench.
     let stdout = String::from_utf8(output.stdout)?;
     let stdout = stdout.trim();
     let (inference_s_s, hyp_text) = stdout
